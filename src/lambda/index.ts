@@ -1,10 +1,10 @@
 const EXTENSION_PORT = parseInt(process.env.EXTENSION_PORT || '4000', 10);
 const EXTENSION_URL = `http://localhost:${EXTENSION_PORT}`;
 
-async function sendPayload(
+const sendPayload = async (
   s3Key: string,
   body: string,
-): Promise<{ ok: boolean; reason?: string }> {
+): Promise<{ ok: boolean; reason?: string }> => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const controller = new AbortController();

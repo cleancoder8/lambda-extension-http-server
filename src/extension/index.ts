@@ -30,48 +30,48 @@ type Job = {
 const queue: Job[] = [];
 let activeUploads = 0;
 
-function jsonResponse(res: http.ServerResponse, status: number, body: Record<string, unknown>): void {
+const jsonResponse = (res: http.ServerResponse, status: number, body: Record<string, unknown>): void => {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
-}
+};
 
-function requireEnv(name: string, value: string): void {
+const requireEnv = (name: string, value: string): void => {
   if (!value) {
     console.error(`[ext] ${name} environment variable is required`);
     process.exit(1);
   }
-}
+};
 
-function jobPath(filename: string): string {
+const jobPath = (filename: string): string => {
   return path.join(QUEUE_DIR, filename);
-}
+};
 
-function metaPath(base: string): string {
+const metaPath = (base: string): string => {
   return path.join(QUEUE_DIR, `${base}.json`);
-}
+};
 
-function bodyPath(base: string): string {
+const bodyPath = (base: string): string => {
   return path.join(QUEUE_DIR, `${base}.bin`);
-}
+};
 
-function createJobId(): string {
+const createJobId = (): string => {
   return randomUUID();
-}
+};
 
-function createS3Key(requestKey?: string): string {
+const createS3Key = (requestKey?: string): string => {
   return requestKey || `uploads/${Date.now()}-${createJobId()}.json`;
-}
+};
 
-function removeFile(filePath: string): void {
+const removeFile = (filePath: string): void => {
   try { fs.unlinkSync(filePath); } catch { /* already gone */ }
-}
+};
 
-function removeJobFiles(base: string): void {
+const removeJobFiles = (base: string): void => {
   removeFile(metaPath(base));
   removeFile(bodyPath(base));
-}
+};
 
-async function uploadToS3(key: string, body: Buffer, contentType?: string): Promise<void> {
+const uploadToS3 = async (key: string, body: Buffer, contentType?: string): Promise<void> => {
   await s3.send(
     new PutObjectCommand({
       Bucket: BUCKET,
@@ -81,14 +81,14 @@ async function uploadToS3(key: string, body: Buffer, contentType?: string): Prom
     }),
   );
   console.log(`[ext] uploaded: ${key}`);
-}
+};
 
-function writeJobToDisk(base: string, key: string, body: Buffer, contentType?: string): void {
+const writeJobToDisk = (base: string, key: string, body: Buffer, contentType?: string): void => {
   fs.writeFileSync(bodyPath(base), body);
   fs.writeFileSync(metaPath(base), JSON.stringify({ key, contentType, retries: 0 }));
-}
+};
 
-function readJobFromDisk(base: string): Job | null {
+const readJobFromDisk = (base: string): Job | null => {
   const metaFile = metaPath(base);
 
   if (!fs.existsSync(bodyPath(base))) {
@@ -109,27 +109,27 @@ function readJobFromDisk(base: string): Job | null {
     removeJobFiles(base);
     return null;
   }
-}
+};
 
-function readJobBody(base: string): Buffer | null {
+const readJobBody = (base: string): Buffer | null => {
   try {
     return fs.readFileSync(bodyPath(base));
   } catch {
     removeFile(metaPath(base));
     return null;
   }
-}
+};
 
-function persistRetries(job: Job): void {
+const persistRetries = (job: Job): void => {
   try {
     fs.writeFileSync(
       metaPath(job.filename),
       JSON.stringify({ key: job.key, contentType: job.contentType, retries: job.retries }),
     );
   } catch { /* best effort */ }
-}
+};
 
-function listMetaFiles(): string[] {
+const listMetaFiles = (): string[] => {
   return fs
     .readdirSync(QUEUE_DIR)
     .filter((f) => f.endsWith('.json'))
@@ -140,17 +140,17 @@ function listMetaFiles(): string[] {
         return 0;
       }
     });
-}
+};
 
-function listBodyFiles(): Set<string> {
+const listBodyFiles = (): Set<string> => {
   return new Set(
     fs.readdirSync(QUEUE_DIR)
       .filter((f) => f.endsWith('.bin'))
       .map((f) => f.replace(/\.bin$/, '')),
   );
-}
+};
 
-function loadQueueFromDisk(): void {
+const loadQueueFromDisk = (): void => {
   const bodyFiles = listBodyFiles();
 
   for (const file of listMetaFiles()) {
@@ -168,29 +168,29 @@ function loadQueueFromDisk(): void {
   for (const orphan of bodyFiles) {
     removeFile(bodyPath(orphan));
   }
-}
+};
 
-function enqueueJob(base: string, key: string, contentType?: string): void {
+const enqueueJob = (base: string, key: string, contentType?: string): void => {
   queue.push({ filename: base, key, contentType, retries: 0 });
-}
+};
 
-function acceptJob(res: http.ServerResponse, key: string): void {
+const acceptJob = (res: http.ServerResponse, key: string): void => {
   jsonResponse(res, 202, { status: 'accepted', key });
-}
+};
 
-function rejectJob(res: http.ServerResponse, status: number, reason: string): void {
+const rejectJob = (res: http.ServerResponse, status: number, reason: string): void => {
   jsonResponse(res, status, { status: 'rejected', reason });
-}
+};
 
-function isBodyTooLarge(contentLength: string | undefined): boolean {
+const isBodyTooLarge = (contentLength: string | undefined): boolean => {
   return parseInt(contentLength || '0', 10) > MAX_BODY_SIZE;
-}
+};
 
-function isQueueFull(): boolean {
+const isQueueFull = (): boolean => {
   return queue.length >= MAX_QUEUED_JOBS;
-}
+};
 
-function readRequestBody(req: http.IncomingMessage, onComplete: (body: Buffer) => void): void {
+const readRequestBody = (req: http.IncomingMessage, onComplete: (body: Buffer) => void): void => {
   req.setTimeout(REQUEST_TIMEOUT_MS);
   req.on('timeout', () => req.destroy());
 
@@ -212,9 +212,9 @@ function readRequestBody(req: http.IncomingMessage, onComplete: (body: Buffer) =
   req.on('end', () => {
     if (!rejected) onComplete(Buffer.concat(chunks));
   });
-}
+};
 
-function handleUploadRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+const handleUploadRequest = (req: http.IncomingMessage, res: http.ServerResponse): void => {
   if (isBodyTooLarge(req.headers['content-length'])) {
     rejectJob(res, 413, 'payload too large');
     return;
@@ -244,9 +244,9 @@ function handleUploadRequest(req: http.IncomingMessage, res: http.ServerResponse
   req.on('error', () => {
     if (!res.headersSent) rejectJob(res, 500, 'read error');
   });
-}
+};
 
-function createServer(): http.Server {
+const createServer = (): http.Server => {
   return http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/upload') {
       handleUploadRequest(req, res);
@@ -255,9 +255,9 @@ function createServer(): http.Server {
       res.end();
     }
   });
-}
+};
 
-function pumpQueue(): void {
+const pumpQueue = (): void => {
   while (activeUploads < MAX_UPLOADS_CONCURRENT && queue.length > 0) {
     const job = queue.shift()!;
 
@@ -275,9 +275,9 @@ function pumpQueue(): void {
         pumpQueue();
       });
   }
-}
+};
 
-function handleUploadFailure(job: Job, cycle: number, error: unknown): void {
+const handleUploadFailure = (job: Job, cycle: number, error: unknown): void => {
   if (cycle >= MAX_RETRY_CYCLES) {
     console.error(`[ext] abandoned: ${job.key}`);
     removeJobFiles(job.filename);
@@ -293,31 +293,31 @@ function handleUploadFailure(job: Job, cycle: number, error: unknown): void {
     queue.push(retryJob);
     pumpQueue();
   }, delay);
-}
+};
 
-function handleShutdown(server: http.Server): void {
+const handleShutdown = (server: http.Server): void => {
   console.log(`[ext] shutdown (${queue.length} queued, ${activeUploads} active)`);
   server.closeAllConnections?.();
   server.close();
   pumpQueue();
-}
+};
 
-function waitForActiveUploads(): Promise<void> {
+const waitForActiveUploads = (): Promise<void> => {
   const deadline = Date.now() + SHUTDOWN_DEADLINE_MS;
 
   return new Promise((resolve) => {
-    function poll(): void {
+    const poll = (): void => {
       if (activeUploads === 0 || Date.now() >= deadline) {
         resolve();
         return;
       }
       setTimeout(poll, 100);
-    }
+    };
     poll();
   });
-}
+};
 
-async function registerExtension(): Promise<string> {
+const registerExtension = async (): Promise<string> => {
   const res = await fetch(`http://${RUNTIME_API}/2020-01-01/extension/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Lambda-Extension-Name': EXTENSION_NAME },
@@ -325,16 +325,16 @@ async function registerExtension(): Promise<string> {
   });
   const { extensionId } = (await res.json()) as { extensionId: string };
   return extensionId;
-}
+};
 
-async function fetchNextEvent(extensionId: string): Promise<{ eventType: string }> {
+const fetchNextEvent = async (extensionId: string): Promise<{ eventType: string }> => {
   const res = await fetch(`http://${RUNTIME_API}/2020-01-01/extension/event/next`, {
     headers: { 'Lambda-Extension-Identifier': extensionId },
   });
   return res.json() as Promise<{ eventType: string }>;
-}
+};
 
-async function extensionEventLoop(extensionId: string, server: http.Server): Promise<void> {
+const extensionEventLoop = async (extensionId: string, server: http.Server): Promise<void> => {
   while (true) {
     let event: { eventType: string };
     try {
@@ -352,9 +352,9 @@ async function extensionEventLoop(extensionId: string, server: http.Server): Pro
       process.exit(0);
     }
   }
-}
+};
 
-async function main(): Promise<void> {
+const main = async (): Promise<void> => {
   requireEnv('BUCKET_NAME', BUCKET);
   requireEnv('AWS_LAMBDA_RUNTIME_API', RUNTIME_API);
 
@@ -372,7 +372,7 @@ async function main(): Promise<void> {
   console.log(`[ext] registered ${extensionId}`);
 
   await extensionEventLoop(extensionId, server);
-}
+};
 
 main().catch((err) => {
   console.error('[ext] fatal:', err);
